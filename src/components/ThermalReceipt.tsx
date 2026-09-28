@@ -70,7 +70,8 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     }
 
     const receiptHtml = receiptEl.innerHTML;
-    const innerContentWidthMm = paperWidth === 80 ? '72mm' : '52mm';
+    // 46mm adalah lebar aman print head thermal 58mm agar teks tepi kiri/kanan tidak terpotong
+    const innerContentWidthMm = paperWidth === 80 ? '70mm' : '46mm';
 
     doc.open();
     doc.write(`<!DOCTYPE html>
@@ -95,22 +96,25 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
       background: #ffffff !important;
       color: #000000 !important;
       font-family: 'Courier New', Courier, monospace !important;
-      font-size: 11px !important;
-      line-height: 1.35 !important;
+      font-size: 9.5px !important;
+      line-height: 1.3 !important;
       height: auto !important;
       min-height: 0 !important;
-      display: flex !important;
-      justify-content: center !important; /* POSISI DI TENGAH */
-      align-items: flex-start !important;
+      display: block !important;
+      text-align: center !important;
     }
     .print-wrapper {
+      display: block !important;
       width: ${innerContentWidthMm} !important;
       max-width: ${innerContentWidthMm} !important;
       margin: 0 auto !important; /* POSISI DI TENGAH KANAN-KIRI */
-      padding: 2mm 1mm 4mm 1mm !important;
+      padding: 0mm 0.5mm 3mm 0.5mm !important; /* NOL PADDING ATAS AGAR LANGSUNG KELUAR DI ATAS */
       height: auto !important; /* MENYESUAIKAN PANJANG STRUK */
       background: #ffffff !important;
       color: #000000 !important;
+      text-align: left !important;
+      overflow: hidden !important;
+      word-break: break-word !important;
     }
     .text-center {
       text-align: center !important;
@@ -130,29 +134,29 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
       justify-content: space-between !important;
       align-items: flex-start !important;
       width: 100% !important;
-      margin: 2px 0 !important;
+      margin: 1.5px 0 !important;
     }
     /* Garis Putus-putus Pemisah */
     .dashed-divider {
       border-top: 1px dashed #000000 !important;
-      margin: 5px 0 !important;
+      margin: 4px 0 !important;
       width: 100% !important;
       height: 0 !important;
     }
     .double-divider {
       border-top: 2px dashed #000000 !important;
-      margin: 6px 0 !important;
+      margin: 5px 0 !important;
       width: 100% !important;
       height: 0 !important;
     }
     .sub-item {
-      font-size: 9.5px !important;
+      font-size: 8.5px !important;
       color: #222222 !important;
       margin: 1px 0 !important;
     }
     .finishing-item {
-      font-size: 9px !important;
-      padding-left: 8px !important;
+      font-size: 8.5px !important;
+      padding-left: 6px !important;
       color: #333333 !important;
       font-style: italic !important;
     }
@@ -385,10 +389,10 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
           id="thermal-printable-receipt"
           ref={receiptRef}
           style={{
-            width: paperWidth === 80 ? '360px' : '280px',
+            width: paperWidth === 80 ? '340px' : '250px',
             fontFamily: "'Courier New', Courier, monospace",
           }}
-          className="bg-white text-black p-4 rounded-xl shadow-md border border-neutral-200 text-[11px] leading-snug space-y-1 select-text mx-auto"
+          className="bg-white text-black p-3 rounded-xl shadow-md border border-neutral-200 text-[10px] leading-snug space-y-1 select-text mx-auto"
         >
           {/* Header - Centered */}
           <div className="text-center pb-1">

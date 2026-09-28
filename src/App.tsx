@@ -15,6 +15,18 @@ import {
   DEFAULT_EXCEL_SYNC_CONFIG,
   syncTransactionToExcelWebhook,
 } from './utils/excel';
+import {
+  loginWithGoogle,
+  logoutGoogle,
+  subscribeToAuth,
+  subscribeToTransactions,
+  subscribeToProducts,
+  saveTransactionToCloud,
+  deleteTransactionFromCloud,
+  saveAllProductsToCloud,
+  testFirestoreConnection
+} from './utils/firebase';
+import { User as FirebaseUser } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { KasirTab } from './components/KasirTab';
 import { RiwayatTab } from './components/RiwayatTab';
@@ -28,6 +40,10 @@ export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'kasir' | 'riwayat' | 'laporan' | 'katalog'>('kasir');
 
+  // Firebase Auth & Cloud Sync State
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+
   // Modals
   const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -36,7 +52,7 @@ export default function App() {
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // App Data with localStorage persistence
+  // App Data with localStorage persistence as initial fallback
   const [products, setProducts] = useState<ProductItem[]>(() => {
     try {
       const saved = localStorage.getItem('wigata_products');
@@ -64,122 +80,7 @@ export default function App() {
     } catch (e) {
       console.warn('Error reading transactions', e);
     }
-    // Initial sample transactions
-    const now = new Date();
-    return [
-      {
-        id: 'init_1',
-        noNota: 'WGT-20260927-1042',
-        date: new Date(now.getTime() - 3600000 * 2).toISOString(),
-        dateStr: new Date(now.getTime() - 3600000 * 2).toLocaleDateString('id-ID'),
-        tanggalDisplay: new Date(now.getTime() - 3600000 * 2).toLocaleDateString('id-ID', {
-          weekday: 'long',
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-        }),
-        jam: '10:15',
-        pelanggan: 'CV Mandiri Grafika',
-        hp: '08122334455',
-        kasir: 'Admin',
-        items: [
-          {
-            cartId: 'item_1',
-            product: CATALOG_PRODUCTS[0], // Flexy 340
-            panjang: 3,
-            lebar: 1,
-            luas: 3,
-            totalLuas: 6,
-            qty: 2,
-            finishing: {
-              mataAyam: true,
-              mataAyamCount: 4,
-              kelim: true,
-              laminasiDoffM: false,
-              laminasiGlossyM: false,
-              ciscut: false,
-              potong: false,
-              laminasiDoffA3: false,
-              laminasiGlossyA3: false,
-              bolakBalik: false,
-              laminasiDingin: false,
-              laminasiPanas: false,
-              laminatingF4: false,
-              warna2x: false,
-              tambahanNomor: false,
-            },
-            desainFee: 0,
-            basePrice: 150000,
-            finishingCost: 10000,
-            total: 160000,
-          },
-        ],
-        subtotal: 160000,
-        diskonPercent: 0,
-        diskonRp: 0,
-        grandTotal: 160000,
-        paymentMethod: 'qris',
-        bayar: 160000,
-        kembalian: 0,
-        statusSyncExcel: 'synced',
-      },
-      {
-        id: 'init_2',
-        noNota: 'WGT-20260927-1158',
-        date: new Date(now.getTime() - 3600000).toISOString(),
-        dateStr: new Date(now.getTime() - 3600000).toLocaleDateString('id-ID'),
-        tanggalDisplay: new Date(now.getTime() - 3600000).toLocaleDateString('id-ID', {
-          weekday: 'long',
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-        }),
-        jam: '11:45',
-        pelanggan: 'Ibu Rina (Snack Berkah)',
-        hp: '085711223344',
-        kasir: 'Kasir 1',
-        items: [
-          {
-            cartId: 'item_2',
-            product: CATALOG_PRODUCTS[11], // Stiker Chromo A3+
-            panjang: 0,
-            lebar: 0,
-            luas: 0,
-            totalLuas: 20,
-            qty: 20,
-            finishing: {
-              mataAyam: false,
-              mataAyamCount: 0,
-              kelim: false,
-              laminasiDoffM: false,
-              laminasiGlossyM: false,
-              ciscut: true,
-              potong: false,
-              laminasiDoffA3: false,
-              laminasiGlossyA3: false,
-              bolakBalik: false,
-              laminasiDingin: false,
-              laminasiPanas: false,
-              laminatingF4: false,
-              warna2x: false,
-              tambahanNomor: false,
-            },
-            desainFee: 15000,
-            basePrice: 150000,
-            finishingCost: 90000, // Ciscut 20 * 4500
-            total: 255000,
-          },
-        ],
-        subtotal: 255000,
-        diskonPercent: 5,
-        diskonRp: 12750,
-        grandTotal: 242250,
-        paymentMethod: 'tunai',
-        bayar: 250000,
-        kembalian: 7750,
-        statusSyncExcel: 'synced',
-      },
-    ];
+    return [];
   });
 
   // Printer & Excel Config
@@ -198,7 +99,45 @@ export default function App() {
     return localStorage.getItem('wigata_kasir_name') || 'Admin';
   });
 
-  // Save changes to localStorage
+  // Test Firestore Connection on Boot
+  useEffect(() => {
+    testFirestoreConnection();
+  }, []);
+
+  // Subscribe to Firebase Auth
+  useEffect(() => {
+    const unsub = subscribeToAuth((user) => {
+      setCurrentUser(user);
+      if (user) {
+        showToast(`Terhubung dengan Google: ${user.displayName || user.email}`);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Real-time Cloud Sync for Transactions & Products
+  useEffect(() => {
+    setIsCloudSyncing(true);
+    const unsubTrans = subscribeToTransactions((cloudTrans) => {
+      if (cloudTrans && cloudTrans.length > 0) {
+        setTransactions(cloudTrans);
+      }
+      setIsCloudSyncing(false);
+    });
+
+    const unsubProds = subscribeToProducts((cloudProds) => {
+      if (cloudProds && cloudProds.length > 0) {
+        setProducts(cloudProds);
+      }
+    });
+
+    return () => {
+      unsubTrans();
+      unsubProds();
+    };
+  }, []);
+
+  // Save changes to localStorage as offline cache
   useEffect(() => {
     localStorage.setItem('wigata_products', JSON.stringify(products));
   }, [products]);
@@ -238,7 +177,36 @@ export default function App() {
     }
   }, [toastMessage]);
 
-  // Save transaction handler with automatic real-time Excel sync
+  // Handle Google Login & Logout
+  const handleGoogleLogin = async () => {
+    try {
+      const user = await loginWithGoogle();
+      if (user) {
+        showToast(`Login berhasil! Menyinkronkan data komputer...`);
+        // Upload initial local data if cloud is empty
+        if (products.length > 0) {
+          saveAllProductsToCloud(products, user);
+        }
+        for (const t of transactions) {
+          saveTransactionToCloud(t, user);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal login Google';
+      showToast(`Login Google gagal: ${msg}`);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    try {
+      await logoutGoogle();
+      showToast('Berhasil keluar dari Akun Google.');
+    } catch {
+      showToast('Gagal logout.');
+    }
+  };
+
+  // Save transaction handler with automatic real-time Cloud & Excel sync
   const handleSaveTransaction = async (
     trxData: Omit<Transaction, 'id'>
   ): Promise<Transaction> => {
@@ -250,39 +218,62 @@ export default function App() {
       statusSyncExcel: syncConfig.webhookUrl ? 'pending' : 'local_only',
     };
 
-    // If auto-sync is on and webhook URL is present, post real-time
+    // 1. Simpan ke Cloud Firestore (agar komputer lain otomatis menerima secara instan)
+    saveTransactionToCloud(newTrx, currentUser).then((saved) => {
+      if (saved) {
+        setIsCloudSyncing(true);
+        setTimeout(() => setIsCloudSyncing(false), 800);
+      }
+    });
+
+    // 2. Jika webhook Excel aktif, kirim juga ke Excel / Google Sheets
     if (syncConfig.webhookUrl && syncConfig.autoSyncOnSave) {
       try {
         const syncRes = await syncTransactionToExcelWebhook(newTrx, syncConfig.webhookUrl);
         if (syncRes.success) {
           newTrx.statusSyncExcel = 'synced';
-          showToast(`Data otomatis disinkronkan ke Excel / Google Sheets!`);
+          showToast(`Nota ${newTrx.noNota} tersimpan & sinkron multi-PC!`);
         } else {
           newTrx.statusSyncExcel = 'failed';
           newTrx.syncError = syncRes.error;
-          showToast(`Tersimpan lokal. Sync Excel gagal: ${syncRes.error}`);
+          showToast(`Tersimpan di Cloud. Sync Excel: ${syncRes.error}`);
         }
       } catch (err: unknown) {
         newTrx.statusSyncExcel = 'failed';
         newTrx.syncError = err instanceof Error ? err.message : 'Sync gagal';
       }
+    } else {
+      showToast(`Nota ${newTrx.noNota} tersimpan & sinkron ke komputer lain!`);
     }
 
-    setTransactions((prev) => [newTrx, ...prev]);
+    setTransactions((prev) => [newTrx, ...prev.filter((t) => t.id !== newTrx.id)]);
     return newTrx;
   };
 
-  const handleDeleteTransaction = (id: string) => {
+  const handleDeleteTransaction = async (id: string) => {
     setTransactions((prev) => prev.filter((t) => t.id !== id));
+    await deleteTransactionFromCloud(id);
+    showToast('Transaksi dihapus dari semua komputer.');
   };
 
-  const handleResetCatalog = () => {
+  const handleUpdateProducts: React.Dispatch<React.SetStateAction<ProductItem[]>> = (action) => {
+    setProducts((prev) => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      saveAllProductsToCloud(next, currentUser);
+      return next;
+    });
+    showToast('Katalog diperbarui di semua komputer.');
+  };
+
+  const handleResetCatalog = async () => {
     setProducts(CATALOG_PRODUCTS);
+    await saveAllProductsToCloud(CATALOG_PRODUCTS, currentUser);
+    showToast('Katalog direset ke default.');
   };
 
   return (
     <div className="min-h-screen bg-[#F4F6F9] text-[#0B1E3A] flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Navigation Header */}
+      {/* Navigation Header with Google Account Login */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -294,6 +285,10 @@ export default function App() {
         kasirName={kasirName}
         onChangeKasir={setKasirName}
         trxCount={transactions.length}
+        currentUser={currentUser}
+        onLoginGoogle={handleGoogleLogin}
+        onLogoutGoogle={handleGoogleLogout}
+        isCloudSyncing={isCloudSyncing}
       />
 
       {/* Main Tab Views */}
@@ -331,7 +326,7 @@ export default function App() {
         {activeTab === 'katalog' && (
           <KatalogTab
             products={products}
-            setProducts={setProducts}
+            setProducts={handleUpdateProducts}
             onResetDefault={handleResetCatalog}
             onShowToast={showToast}
           />
@@ -353,8 +348,8 @@ export default function App() {
         transactions={transactions}
         products={products}
         onImportProducts={(imported) => {
-          setProducts(imported);
-          showToast(`${imported.length} produk diupdate dari Excel`);
+          handleUpdateProducts(imported);
+          showToast(`${imported.length} produk diupdate dan disinkronkan ke cloud`);
         }}
         onShowToast={showToast}
       />

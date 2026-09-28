@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Daftar harga dan produk cetak kasir Wigata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "unit": { "type": "string" },
+        "price": { "type": "number" },
+        "note": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "name", "category", "unit", "price"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Riwayat transaksi penjualan kasir Wigata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "noNota": { "type": "string" },
+        "dateStr": { "type": "string" },
+        "jam": { "type": "string" },
+        "pelanggan": { "type": "string" },
+        "hp": { "type": "string" },
+        "kasir": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "diskonPercent": { "type": "number" },
+        "diskonRp": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "bayar": { "type": "number" },
+        "kembalian": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "noNota", "grandTotal", "bayar"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Pengaturan informasi toko dan printer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeInfo": { "type": "object" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Koleksi produk cetak Wigata Digital Print yang disinkronkan antar komputer"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Koleksi nota transaksi penjualan yang disinkronkan antar komputer"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Konfigurasi toko Wigata"
+    }
+  }
+}
