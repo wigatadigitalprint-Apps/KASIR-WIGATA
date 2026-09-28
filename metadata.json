@@ -1,0 +1,6 @@
+{
+  "name": "Wigata POS Digital Print - Kasir & Thermal Print",
+  "description": "Aplikasi Kasir Percetakan Wigata Digital Print dengan koneksi database Excel real-time, cetak thermal printer Bluetooth dan USB kabel, serta manajemen transaksi online.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
