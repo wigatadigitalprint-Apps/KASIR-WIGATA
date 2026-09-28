@@ -16,17 +16,13 @@ import {
   syncTransactionToExcelWebhook,
 } from './utils/excel';
 import {
-  loginWithGoogle,
-  logoutGoogle,
-  subscribeToAuth,
   subscribeToTransactions,
   subscribeToProducts,
   saveTransactionToCloud,
   deleteTransactionFromCloud,
   saveAllProductsToCloud,
-  testFirestoreConnection
+  testFirestoreConnection,
 } from './utils/firebase';
-import { User as FirebaseUser } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { KasirTab } from './components/KasirTab';
 import { RiwayatTab } from './components/RiwayatTab';
@@ -35,19 +31,23 @@ import { KatalogTab } from './components/KatalogTab';
 import { PrinterModal } from './components/PrinterModal';
 import { ExcelSyncModal } from './components/ExcelSyncModal';
 import { DeployGuideModal } from './components/DeployGuideModal';
+import { CloudSyncModal } from './components/CloudSyncModal';
 
 export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'kasir' | 'riwayat' | 'laporan' | 'katalog'>('kasir');
 
-  // Firebase Auth & Cloud Sync State
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  // Cloud Sync State
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>(() => {
+    return localStorage.getItem('wigata_user_email') || 'wigatadigitalprint@gmail.com';
+  });
 
   // Modals
   const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -104,18 +104,7 @@ export default function App() {
     testFirestoreConnection();
   }, []);
 
-  // Subscribe to Firebase Auth
-  useEffect(() => {
-    const unsub = subscribeToAuth((user) => {
-      setCurrentUser(user);
-      if (user) {
-        showToast(`Terhubung dengan Google: ${user.displayName || user.email}`);
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // Real-time Cloud Sync for Transactions & Products
+  // Real-time Cloud Sync for Transactions & Products (multi-PC)
   useEffect(() => {
     setIsCloudSyncing(true);
     const unsubTrans = subscribeToTransactions((cloudTrans) => {
@@ -158,6 +147,10 @@ export default function App() {
     localStorage.setItem('wigata_kasir_name', kasirName);
   }, [kasirName]);
 
+  useEffect(() => {
+    localStorage.setItem('wigata_user_email', userEmail);
+  }, [userEmail]);
+
   // Subscribe to printer changes
   useEffect(() => {
     return printerService.subscribe((cfg) => {
@@ -177,32 +170,19 @@ export default function App() {
     }
   }, [toastMessage]);
 
-  // Handle Google Login & Logout
-  const handleGoogleLogin = async () => {
+  // Manual Full Cloud Sync
+  const handleManualSyncAll = async () => {
+    setIsCloudSyncing(true);
     try {
-      const user = await loginWithGoogle();
-      if (user) {
-        showToast(`Login berhasil! Menyinkronkan data komputer...`);
-        // Upload initial local data if cloud is empty
-        if (products.length > 0) {
-          saveAllProductsToCloud(products, user);
-        }
-        for (const t of transactions) {
-          saveTransactionToCloud(t, user);
-        }
+      await saveAllProductsToCloud(products, userEmail);
+      for (const t of transactions) {
+        await saveTransactionToCloud(t, userEmail);
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal login Google';
-      showToast(`Login Google gagal: ${msg}`);
-    }
-  };
-
-  const handleGoogleLogout = async () => {
-    try {
-      await logoutGoogle();
-      showToast('Berhasil keluar dari Akun Google.');
+      showToast('Sinkronisasi cloud multi-PC berhasil diperbarui!');
     } catch {
-      showToast('Gagal logout.');
+      showToast('Gagal menyinkronkan ke cloud');
+    } finally {
+      setIsCloudSyncing(false);
     }
   };
 
@@ -219,7 +199,7 @@ export default function App() {
     };
 
     // 1. Simpan ke Cloud Firestore (agar komputer lain otomatis menerima secara instan)
-    saveTransactionToCloud(newTrx, currentUser).then((saved) => {
+    saveTransactionToCloud(newTrx, userEmail).then((saved) => {
       if (saved) {
         setIsCloudSyncing(true);
         setTimeout(() => setIsCloudSyncing(false), 800);
@@ -259,7 +239,7 @@ export default function App() {
   const handleUpdateProducts: React.Dispatch<React.SetStateAction<ProductItem[]>> = (action) => {
     setProducts((prev) => {
       const next = typeof action === 'function' ? action(prev) : action;
-      saveAllProductsToCloud(next, currentUser);
+      saveAllProductsToCloud(next, userEmail);
       return next;
     });
     showToast('Katalog diperbarui di semua komputer.');
@@ -267,13 +247,13 @@ export default function App() {
 
   const handleResetCatalog = async () => {
     setProducts(CATALOG_PRODUCTS);
-    await saveAllProductsToCloud(CATALOG_PRODUCTS, currentUser);
+    await saveAllProductsToCloud(CATALOG_PRODUCTS, userEmail);
     showToast('Katalog direset ke default.');
   };
 
   return (
     <div className="min-h-screen bg-[#F4F6F9] text-[#0B1E3A] flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Navigation Header with Google Account Login */}
+      {/* Navigation Header with Cloud Multi-PC Sync */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -282,12 +262,11 @@ export default function App() {
         onOpenExcelModal={() => setIsExcelModalOpen(true)}
         onOpenPrinterModal={() => setIsPrinterModalOpen(true)}
         onOpenDeployModal={() => setIsDeployModalOpen(true)}
+        onOpenCloudModal={() => setIsCloudModalOpen(true)}
         kasirName={kasirName}
         onChangeKasir={setKasirName}
         trxCount={transactions.length}
-        currentUser={currentUser}
-        onLoginGoogle={handleGoogleLogin}
-        onLogoutGoogle={handleGoogleLogout}
+        userEmail={userEmail}
         isCloudSyncing={isCloudSyncing}
       />
 
@@ -334,6 +313,17 @@ export default function App() {
       </main>
 
       {/* Modals */}
+      <CloudSyncModal
+        isOpen={isCloudModalOpen}
+        onClose={() => setIsCloudModalOpen(false)}
+        transactions={transactions}
+        products={products}
+        userEmail={userEmail}
+        onUpdateUserEmail={setUserEmail}
+        onManualSyncAll={handleManualSyncAll}
+        onShowToast={showToast}
+      />
+
       <PrinterModal
         isOpen={isPrinterModalOpen}
         onClose={() => setIsPrinterModalOpen(false)}

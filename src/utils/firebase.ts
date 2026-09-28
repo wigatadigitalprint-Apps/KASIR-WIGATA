@@ -8,7 +8,6 @@ import {
   setDoc,
   doc,
   deleteDoc,
-  getDocs,
   getDocFromServer,
   Firestore
 } from 'firebase/firestore';
@@ -51,7 +50,7 @@ export const db: Firestore = initializeFirestore(
   config.firestoreDatabaseId
 );
 
-// Connection test as required by skill
+// Connection test
 export async function testFirestoreConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -64,7 +63,7 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
-// Auth operations
+// Optional Auth operations (if needed)
 export const loginWithGoogle = async (): Promise<User | null> => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -88,7 +87,7 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
   return onAuthStateChanged(auth, callback);
 };
 
-// Firestore sync for Transactions
+// Firestore sync for Transactions - DIRECT REAL-TIME SYNC
 export const subscribeToTransactions = (
   callback: (transactions: Transaction[]) => void
 ) => {
@@ -110,12 +109,20 @@ export const subscribeToTransactions = (
   );
 };
 
-export const saveTransactionToCloud = async (transaction: Transaction, user?: User | null) => {
+export const saveTransactionToCloud = async (
+  transaction: Transaction,
+  userOrEmail?: User | null | string
+) => {
   try {
+    const author =
+      typeof userOrEmail === 'string'
+        ? userOrEmail
+        : userOrEmail?.email || userOrEmail?.displayName || 'Kasir Wigata';
+
     const cleanTrans = {
       ...transaction,
       updatedAt: new Date().toISOString(),
-      updatedBy: user?.email || 'Admin',
+      updatedBy: author,
     };
     await setDoc(doc(db, 'transactions', transaction.id), cleanTrans, { merge: true });
     return true;
@@ -135,7 +142,7 @@ export const deleteTransactionFromCloud = async (transactionId: string) => {
   }
 };
 
-// Firestore sync for Products
+// Firestore sync for Products - DIRECT REAL-TIME SYNC
 export const subscribeToProducts = (
   callback: (products: ProductItem[]) => void
 ) => {
@@ -156,12 +163,20 @@ export const subscribeToProducts = (
   );
 };
 
-export const saveProductToCloud = async (product: ProductItem, user?: User | null) => {
+export const saveProductToCloud = async (
+  product: ProductItem,
+  userOrEmail?: User | null | string
+) => {
   try {
+    const author =
+      typeof userOrEmail === 'string'
+        ? userOrEmail
+        : userOrEmail?.email || userOrEmail?.displayName || 'Kasir Wigata';
+
     const data = {
       ...product,
       updatedAt: new Date().toISOString(),
-      updatedBy: user?.email || 'Admin',
+      updatedBy: author,
     };
     await setDoc(doc(db, 'products', product.id), data, { merge: true });
     return true;
@@ -171,10 +186,13 @@ export const saveProductToCloud = async (product: ProductItem, user?: User | nul
   }
 };
 
-export const saveAllProductsToCloud = async (products: ProductItem[], user?: User | null) => {
+export const saveAllProductsToCloud = async (
+  products: ProductItem[],
+  userOrEmail?: User | null | string
+) => {
   try {
     for (const prod of products) {
-      await saveProductToCloud(prod, user);
+      await saveProductToCloud(prod, userOrEmail);
     }
     return true;
   } catch (error) {
