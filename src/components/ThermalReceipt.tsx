@@ -4,15 +4,13 @@ import { STORE_INFO, formatRupiah, formatNumber } from '../utils/defaultData';
 import { printerService } from '../utils/printer';
 import {
   Printer,
-  Bluetooth,
-  Cable,
-  Download,
   Share2,
   FileText,
   FileDown,
+  Settings,
   Sparkles,
-  CheckCircle2,
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
 
 interface ThermalReceiptProps {
   transaction: Transaction;
@@ -28,7 +26,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
   onShowToast,
 }) => {
   const [paperWidth, setPaperWidth] = useState<58 | 80>(printerConfig.paperWidth || 58);
-  const [isPrintingDirect, setIsPrintingDirect] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const getFinishingLabels = (fin: typeof transaction.items[0]['finishing'], cat: string) => {
@@ -51,34 +49,15 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     return list;
   };
 
-  // Direct ESC/POS Print to Bluetooth / USB Serial thermal printer
-  const handleDirectThermalPrint = async () => {
-    if (!printerConfig.connected) {
-      onShowToast('Printer belum terhubung! Silakan buka menu Printer untuk koneksi Bluetooth / USB.');
-      onOpenPrinterModal();
-      return;
-    }
-
-    setIsPrintingDirect(true);
-    const res = await printerService.printTransaction(transaction);
-    setIsPrintingDirect(false);
-
-    if (res.success) {
-      onShowToast(`Struk ${transaction.noNota} berhasil dicetak via ${printerConfig.type.toUpperCase()}!`);
-    } else {
-      onShowToast(`Gagal mencetak: ${res.error}. Anda bisa gunakan Cetak Browser.`);
-    }
-  };
-
-  // Browser System Print with isolated auto-length iframe
-  const handleSystemPrint = () => {
+  // Cetak Struk: Menyesuaikan panjang struk nota saja & posisi kanan kiri di tengah
+  const handlePrintStruk = () => {
     const receiptEl = receiptRef.current;
     if (!receiptEl) {
       window.print();
       return;
     }
 
-    // Create temporary hidden iframe to isolate the exact height of the receipt
+    // Buat iframe terisolasi agar tinggi kertas pas mengikuti isi struk dan posisi di tengah
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -96,7 +75,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
 
     const receiptHtml = receiptEl.innerHTML;
     const printWidthMm = paperWidth;
-    const innerContentWidthMm = paperWidth === 80 ? '72mm' : '48mm';
+    const innerContentWidthMm = paperWidth === 80 ? '72mm' : '52mm';
 
     doc.open();
     doc.write(`<!DOCTYPE html>
@@ -113,22 +92,26 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
       box-sizing: border-box;
     }
     html, body {
-      width: ${printWidthMm}mm;
-      max-width: ${printWidthMm}mm;
+      width: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
-      background: #fff !important;
-      color: #000 !important;
+      background: #ffffff !important;
+      color: #000000 !important;
       font-family: 'Courier New', Courier, monospace !important;
       font-size: 11px !important;
       line-height: 1.25 !important;
       height: auto !important;
       min-height: 0 !important;
+      display: flex !important;
+      justify-content: center !important; /* POSISI KANAN KIRI DI TENGAH */
+      align-items: flex-start !important;
     }
     .print-wrapper {
       width: ${innerContentWidthMm};
-      margin: 0 auto;
+      max-width: ${innerContentWidthMm};
+      margin: 0 auto !important; /* POSISI KANAN KIRI DI TENGAH */
       padding: 1.5mm 1mm 3mm 1mm;
+      height: auto !important; /* MENYESUAIKAN PANJANG STRUK */
     }
     div, p, span {
       margin-top: 0;
@@ -156,11 +139,66 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
       }, 1500);
     }, 200);
 
-    onShowToast('Membuka cetak auto-fit panjang struk...');
+    onShowToast('Membuka cetak struk (panjang pas & di tengah)...');
   };
 
-  // Text version for WhatsApp or TXT
-  const generatePlainText = (): string => {
+  // Download PDF
+  const handleDownloadPDF = () => {
+    handlePrintStruk();
+  };
+
+  // Share WA PNG (capture receipt as PNG image)
+  const handleShareWAPNG = async () => {
+    const receiptEl = receiptRef.current;
+    if (!receiptEl) return;
+
+    setIsGeneratingImage(true);
+    onShowToast('Menyiapkan gambar struk PNG...');
+
+    try {
+      const canvas = await html2canvas(receiptEl, {
+        scale: 3,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+      });
+
+      canvas.toBlob(async (blob) => {
+        setIsGeneratingImage(false);
+        if (!blob) return;
+
+        const file = new File([blob], `Struk-${transaction.noNota}.png`, { type: 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `Struk ${transaction.noNota}`,
+              text: `Struk Nota ${transaction.noNota} - Wigata Digital Print`,
+            });
+            onShowToast('Struk PNG berhasil dibagikan');
+            return;
+          } catch {
+            // fallback
+          }
+        }
+
+        // Direct Download if share not supported
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Struk-${transaction.noNota}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+        onShowToast('Gambar struk PNG berhasil diunduh');
+      }, 'image/png');
+    } catch {
+      setIsGeneratingImage(false);
+      onShowToast('Gagal memproses gambar struk');
+    }
+  };
+
+  // Download TXT
+  const handleDownloadTxt = () => {
     const maxChars = paperWidth === 80 ? 42 : 32;
     const lineSep = '-'.repeat(maxChars);
     const doubleSep = '='.repeat(maxChars);
@@ -214,11 +252,6 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     text += `WA: ${STORE_INFO.phone}\n`;
     text += `Wigata POS Digital Print\n`;
 
-    return text;
-  };
-
-  const handleDownloadTxt = () => {
-    const text = generatePlainText();
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -229,35 +262,16 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     onShowToast('Struk TXT berhasil diunduh');
   };
 
-  const handleShareWhatsApp = async () => {
-    const text = generatePlainText();
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Struk Nota ${transaction.noNota}`,
-          text,
-        });
-        onShowToast('Struk berhasil dibagikan');
-        return;
-      } catch {
-        // Fallback to whatsapp link
-      }
-    }
-    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, '_blank');
-    onShowToast('Membuka WhatsApp untuk mengirim struk...');
-  };
-
   return (
     <div className="bg-white rounded-3xl p-5 shadow-sm border border-black/5 space-y-4">
       {/* Header & Width Switcher */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-black text-sm uppercase tracking-wide text-[#0B1E3A] flex items-center gap-1.5">
-            <Printer className="w-4 h-4 text-amber-500" />
-            Struk Thermal Preview
+            <Printer className="w-4 h-4 text-[#FFD23F]" />
+            STRUK
           </h3>
-          <p className="text-[11px] text-black/50">Format kertas roll continuous mini POS</p>
+          <p className="text-[11px] text-black/50">Tampilan struk mini POS presisi</p>
         </div>
 
         <div className="flex items-center gap-1 bg-[#F1F3F8] p-1 rounded-xl">
@@ -280,13 +294,13 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
         </div>
       </div>
 
-      {/* Visual Paper Preview Container */}
+      {/* Visual Paper Preview Container - Centered */}
       <div className="bg-[#EBEFF5] p-4 rounded-2xl flex justify-center overflow-x-auto shadow-inner">
         <div
           id="thermal-printable-receipt"
           ref={receiptRef}
           style={{ width: paperWidth === 80 ? '360px' : '280px' }}
-          className="bg-white text-black p-4 rounded-xl shadow-md border border-neutral-200 font-mono text-[11px] leading-snug space-y-2 select-text"
+          className="bg-white text-black p-4 rounded-xl shadow-md border border-neutral-200 font-mono text-[11px] leading-snug space-y-2 select-text mx-auto"
         >
           {/* Header */}
           <div className="text-center space-y-0.5 pb-1 border-b border-dashed border-black/40">
@@ -305,12 +319,16 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
           {/* Meta Info */}
           <div className="text-[10px] space-y-0.5 border-b border-dashed border-black/40 pb-1.5">
             <div className="flex justify-between">
-              <span className="text-black/60">No Nota:</span>
+              <span className="text-black/60">No Nota :</span>
               <span className="font-bold">{transaction.noNota}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-black/60">Waktu:</span>
-              <span>{transaction.dateStr} {transaction.jam}</span>
+              <span className="text-black/60">Tanggal :</span>
+              <span>{transaction.dateStr}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-black/60">Jam :</span>
+              <span>{transaction.jam}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-black/60">Pelanggan:</span>
@@ -318,12 +336,12 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
             </div>
             {transaction.hp && (
               <div className="flex justify-between">
-                <span className="text-black/60">No WA/HP:</span>
+                <span className="text-black/60">HP :</span>
                 <span>{transaction.hp}</span>
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-black/60">Kasir:</span>
+              <span className="text-black/60">Kasir :</span>
               <span>{transaction.kasir || 'Admin'}</span>
             </div>
           </div>
@@ -331,7 +349,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
           {/* Item List */}
           <div className="space-y-2 py-1 border-b border-dashed border-black/40">
             {transaction.items.length === 0 ? (
-              <div className="text-center text-black/40 py-2">Belum ada item di nota</div>
+              <div className="text-center text-black/40 py-2">Keranjang kosong</div>
             ) : (
               transaction.items.map((item, idx) => {
                 const fins = getFinishingLabels(item.finishing, item.product.category);
@@ -343,19 +361,24 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
                     </div>
                     <div className="text-[10px] text-black/70">
                       {item.product.category === 'Meteran'
-                        ? `${item.panjang}x${item.lebar}m x ${item.qty} = ${formatNumber(item.totalLuas, 2)}m2 @${formatNumber(item.product.price)}`
+                        ? `${item.panjang}m x ${item.lebar}m x ${item.qty} = ${formatNumber(item.totalLuas, 2)}m2`
                         : item.product.category === 'Cutting'
-                        ? `${Math.round(item.panjang)}x${Math.round(item.lebar)}cm = ${Math.round(item.totalLuas)}cm @${formatNumber(item.product.price)}`
-                        : `${item.qty} ${item.product.unit} @${formatNumber(item.product.price)}`}
+                        ? `Ukuran: ${Math.round(item.panjang)}cm x ${Math.round(item.lebar)}cm = ${Math.round(item.luas)}cm x ${item.qty} pcs`
+                        : `${item.qty} ${item.product.unit}`}
+                    </div>
+                    <div className="text-[10px] text-black/70">
+                      @{formatNumber(item.product.price)} {item.product.unit} {item.product.category === 'A3+' && item.finishing.bolakBalik ? '(x2)' : ''} = {formatRupiah(item.basePrice)}
                     </div>
                     {fins.length > 0 && (
                       <div className="text-[9.5px] text-black/60 italic pl-2">
-                        - {fins.join(', ')}
+                        {fins.map((f, i) => (
+                          <div key={i}>- {f}</div>
+                        ))}
                       </div>
                     )}
                     {item.desainFee > 0 && (
                       <div className="text-[9.5px] text-black/60 pl-2">
-                        - Desain: {formatRupiah(item.desainFee)}
+                        Desain: {formatRupiah(item.desainFee)}
                       </div>
                     )}
                   </div>
@@ -372,7 +395,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
             </div>
             {(transaction.diskonPercent > 0 || transaction.diskonRp > 0) && (
               <div className="flex justify-between text-red-600 font-bold">
-                <span>Diskon ({transaction.diskonPercent}%)</span>
+                <span>Diskon {transaction.diskonPercent}%</span>
                 <span>-{formatRupiah(transaction.diskonRp)}</span>
               </div>
             )}
@@ -387,95 +410,82 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
             {transaction.paymentMethod === 'tunai' && (
               <div className="flex justify-between text-[10px] font-bold">
                 <span>Kembalian</span>
-                <span>{formatRupiah(transaction.kembalian)}</span>
+                <span>{formatRupiah(transaction.kembalian > 0 ? transaction.kembalian : 0)}</span>
               </div>
             )}
           </div>
 
           {/* Footer note */}
           <div className="text-center text-[9.5px] text-black/70 space-y-0.5 pt-1">
-            <div className="font-bold text-black">Terima Kasih Sudah Order!</div>
+            <div className="font-bold text-black">Terima kasih Sudah Order</div>
             <div>{STORE_INFO.note1}</div>
             <div>{STORE_INFO.note2}</div>
             <div className="pt-1 text-[9px] text-black/50">
+              Hubungi WA 082323403108
+              <br />
               Dicetak: {new Date().toLocaleString('id-ID')}
               <br />
-              KASIR WIGATA DIGITAL PRINT
+              <span className="font-bold">KASIR WIGATA DIGITAL PRINT</span>
+              <br />
+              <span className="text-[8.5px]">Powered by Wigata POS v2.0</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="space-y-2 pt-1">
-        {/* Main Smart Print Button */}
+      {/* Action Buttons - Kembali ke Tampilan Semula dengan Tombol Lengkap */}
+      <div id="struk-preview" className="space-y-2.5 pt-1">
+        {/* Tombol Utama: Cetak Struk (Tinggi Pas & Posisi Tengah) */}
         <button
-          onClick={async () => {
-            if (printerConfig.connected && printerConfig.type !== 'windows_spooler' && printerConfig.type !== 'system') {
-              await handleDirectThermalPrint();
-            } else {
-              handleSystemPrint();
-            }
-          }}
-          disabled={isPrintingDirect}
-          className="w-full py-3.5 rounded-2xl bg-[#0B1E3A] hover:bg-black text-white font-black text-sm flex items-center justify-center gap-2 shadow-md transition"
-          title="Cetak struk ke printer thermal"
+          onClick={handlePrintStruk}
+          className="w-full bg-[#0B1E3A] hover:bg-black text-white font-black py-3 rounded-xl h-[46px] flex items-center justify-center gap-2 shadow-sm transition"
         >
-          <Printer className="w-4 h-4 text-[#FFD23F]" />
-          <span>
-            {isPrintingDirect
-              ? 'Sedang Mencetak...'
-              : printerConfig.type === 'webusb' && printerConfig.connected
-              ? 'Cetak Direct WebUSB (EPPOS 58)'
-              : printerConfig.type === 'bluetooth' && printerConfig.connected
-              ? 'Cetak via Bluetooth (EPPOS 58)'
-              : 'Cetak Struk Thermal (EPPOS 58)'}
-          </span>
+          <span className="text-[16px]">🖨️</span>
+          <span>Cetak Struk</span>
         </button>
 
-        {/* Secondary Actions */}
-        <div className="grid grid-cols-2 gap-2">
-          {/* Change / Configure Printer */}
+        {/* Tombol Dua Kolom: Download PDF & Share WA PNG */}
+        <div className="grid grid-cols-2 gap-2.5">
           <button
-            onClick={onOpenPrinterModal}
-            className="py-2.5 px-3 rounded-xl border border-black/10 bg-[#F6F7FB] hover:bg-black/10 text-[#0B1E3A] font-bold text-xs flex items-center justify-center gap-1.5 transition"
-            title="Buka pengaturan metode printer (Windows Driver / WebUSB / Bluetooth)"
+            onClick={handleDownloadPDF}
+            className="bg-[#FFD23F] hover:brightness-95 text-[#0B1E3A] font-black py-3 rounded-xl h-[46px] text-sm flex items-center justify-center gap-1.5 shadow-sm transition"
           >
-            <Cable className="w-3.5 h-3.5 text-black/50" />
-            <span className="truncate">Pengaturan Printer</span>
+            <span>📄</span>
+            <span>Download PDF</span>
           </button>
 
-          {/* Share WhatsApp */}
           <button
-            onClick={handleShareWhatsApp}
-            className="py-2.5 px-3 rounded-xl bg-[#25D366] hover:bg-[#1ebe5a] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
-            title="Bagikan rincian nota langsung ke nomor WhatsApp pelanggan"
+            onClick={handleShareWAPNG}
+            disabled={isGeneratingImage}
+            className="bg-[#25D366] hover:bg-[#1ebe5a] text-white font-black py-3 rounded-xl h-[46px] text-sm flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50"
           >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>Share WA</span>
+            <span>💬</span>
+            <span>{isGeneratingImage ? 'Memproses...' : 'Share WA PNG'}</span>
           </button>
         </div>
 
-        {/* Download TXT */}
-        <button
-          onClick={handleDownloadTxt}
-          className="w-full py-2 rounded-xl border border-black/10 bg-white hover:bg-[#F6F7FB] text-black/60 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition"
-          title="Download struk teks untuk arsip"
-        >
-          <FileText className="w-3.5 h-3.5" />
-          <span>Download Struk (File TXT)</span>
-        </button>
+        {/* Tombol Cadangan: File TXT & Pengaturan Printer */}
+        <div className="flex items-center justify-between gap-2 pt-1 text-[11px]">
+          <button
+            onClick={handleDownloadTxt}
+            className="text-black/60 hover:text-black font-semibold flex items-center gap-1 py-1"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Download TXT</span>
+          </button>
 
-        {/* Printer status hint */}
-        <div className="text-[11px] bg-amber-50/80 border border-amber-200/80 rounded-2xl p-3 text-black/75 space-y-1">
-          <div className="font-bold text-[#0B1E3A] flex items-center gap-1.5">
-            <span>💡 3 Setelan di Jendela Print Windows agar Kertas Berhenti Pas:</span>
-          </div>
-          <ul className="list-disc list-inside space-y-0.5 text-[10.5px] text-black/70">
-            <li><strong>Ukuran Kertas (Paper size):</strong> Pilih <code>58 x 210 mm</code> atau <code>Roll Paper 58mm</code> (jangan pilih A4).</li>
-            <li><strong>Margin:</strong> Pilih <strong>None</strong> (Nol).</li>
-            <li><strong>Opsi (Options):</strong> <em>Hilangkan centang</em> <strong>Headers and footers</strong> agar tidak menarik kertas kosong di bawah.</li>
-          </ul>
+          <button
+            onClick={onOpenPrinterModal}
+            className="text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1 py-1"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Pengaturan Printer ({printerConfig.paperWidth}mm)</span>
+          </button>
+        </div>
+
+        {/* Keterangan Singkat */}
+        <div className="text-[10px] text-center text-black/40 pt-1 leading-snug">
+          Cetak otomatis menyesuaikan panjang isi nota & posisi rata tengah pada kertas thermal.
         </div>
       </div>
     </div>
