@@ -33,11 +33,14 @@ class PrinterService {
   private bluetoothCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private serialPort: SerialPort | null = null;
   private serialWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  private usbDevice: USBDevice | null = null;
+  private usbEndpointNumber: number = 1;
 
   public config: PrinterConfig = {
-    type: 'bluetooth',
+    type: 'windows_spooler',
     paperWidth: 58,
-    connected: false,
+    connected: true, // Default to true for Windows Spooler
+    deviceName: 'Windows Printer (Driver EPPOS 58 / POS-58)',
     autoCut: true,
     openDrawer: false,
     printDensity: 'normal',
@@ -57,7 +60,7 @@ class PrinterService {
         this.config = {
           ...this.config,
           ...parsed,
-          connected: false, // Connection must be re-established per session
+          connected: parsed.type === 'windows_spooler' ? true : false,
         };
       }
     } catch (e) {
@@ -104,14 +107,99 @@ class PrinterService {
     return typeof navigator !== 'undefined' && 'serial' in navigator;
   }
 
-  // Connect Bluetooth Thermal Printer
+  public isUsbSupported(): boolean {
+    return typeof navigator !== 'undefined' && 'usb' in navigator;
+  }
+
+  // METHOD A: Windows Printer (Driver EPPOS 58 / USB Virtual Printer Port)
+  public setWindowsPrinterMode(paperWidth: 58 | 80 = 58) {
+    this.saveConfig({
+      connected: true,
+      type: 'windows_spooler',
+      paperWidth,
+      deviceName: `Windows Printer (${paperWidth}mm)`,
+    });
+    return { success: true, deviceName: `Windows Printer (${paperWidth}mm)` };
+  }
+
+  // METHOD B: Direct WebUSB (Raw USB Printer Port Class 07)
+  public async connectWebUSB(): Promise<{ success: boolean; deviceName?: string; error?: string }> {
+    if (!this.isUsbSupported() || !navigator.usb) {
+      return {
+        success: false,
+        error: 'Browser belum mendukung WebUSB. Pastikan menggunakan Google Chrome / Microsoft Edge.',
+      };
+    }
+
+    try {
+      await this.disconnect();
+
+      // Request USB Printer without strict vendor ID filtering so any EPPOS, POS-58, Xprinter appears!
+      const device = await navigator.usb.requestDevice({
+        filters: [
+          { classCode: 7 }, // USB Printer class
+          {}, // Catch-all for any USB peripheral
+        ],
+      });
+
+      await device.open();
+      if (device.configuration === null) {
+        await device.selectConfiguration(1);
+      }
+
+      // Find interface with OUT bulk endpoint
+      let targetInterfaceNumber = 0;
+      let targetEndpointNumber = 1;
+      let found = false;
+
+      const interfaces = device.configuration?.interfaces || [];
+      for (const iface of interfaces) {
+        const outEp = iface.alternate?.endpoints?.find((ep) => ep.direction === 'out');
+        if (outEp) {
+          targetInterfaceNumber = iface.interfaceNumber;
+          targetEndpointNumber = outEp.endpointNumber;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        // Fallback default
+        targetInterfaceNumber = 0;
+        targetEndpointNumber = 1;
+      }
+
+      try {
+        await device.claimInterface(targetInterfaceNumber);
+      } catch (claimErr) {
+        console.warn('Interface claim notice', claimErr);
+      }
+
+      this.usbDevice = device;
+      this.usbEndpointNumber = targetEndpointNumber;
+
+      const devName = device.productName || `EPPOS / USB Printer (${device.vendorId.toString(16)})`;
+
+      this.saveConfig({
+        connected: true,
+        type: 'webusb',
+        deviceName: devName,
+      });
+
+      return { success: true, deviceName: devName };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Gagal menghubungkan printer USB';
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  // Connect Bluetooth Thermal Printer (Mobile / Android)
   public async connectBluetooth(): Promise<{ success: boolean; deviceName?: string; error?: string }> {
     if (!this.isBluetoothSupported()) {
       return { success: false, error: 'Browser ini belum mendukung Web Bluetooth. Gunakan Google Chrome di Android atau Desktop.' };
     }
 
     try {
-      // Disconnect previous if any
       await this.disconnect();
 
       if (!navigator.bluetooth) {
@@ -129,10 +217,7 @@ class PrinterService {
 
       const server = await device.gatt.connect();
 
-      // Find suitable service and write characteristic
       let writeChar: BluetoothRemoteGATTCharacteristic | null = null;
-
-      // Try known services first
       const services = await server.getPrimaryServices().catch(() => []);
       for (const service of services) {
         try {
@@ -144,7 +229,7 @@ class PrinterService {
             }
           }
         } catch {
-          // continue searching
+          // continue
         }
         if (writeChar) break;
       }
@@ -174,7 +259,7 @@ class PrinterService {
     }
   }
 
-  // Connect USB Cable / Serial Port Thermal Printer
+  // Connect USB Cable Serial COM Port (if using USB-to-Serial converter)
   public async connectSerial(baudRate: number = 9600): Promise<{ success: boolean; deviceName?: string; error?: string }> {
     if (!this.isSerialSupported()) {
       return { success: false, error: 'Browser ini belum mendukung Web Serial (Kabel USB). Gunakan Google Chrome / Microsoft Edge di PC/Laptop/OTG.' };
@@ -198,7 +283,7 @@ class PrinterService {
       }
 
       const info = port.getInfo();
-      const deviceName = info.usbVendorId ? `USB Thermal Printer (${info.usbVendorId.toString(16)})` : 'USB Thermal Printer Kabel';
+      const deviceName = info.usbVendorId ? `USB Serial COM (${info.usbVendorId.toString(16)})` : 'USB Serial COM';
 
       this.saveConfig({
         connected: true,
@@ -208,7 +293,7 @@ class PrinterService {
 
       return { success: true, deviceName };
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Gagal menghubungkan kabel USB printer';
+      const errorMsg = err instanceof Error ? err.message : 'Gagal menghubungkan kabel USB serial';
       return { success: false, error: errorMsg };
     }
   }
@@ -238,11 +323,43 @@ class PrinterService {
       this.serialPort = null;
     }
 
+    if (this.usbDevice && this.usbDevice.opened) {
+      try {
+        await this.usbDevice.close();
+      } catch {
+        // ignore
+      }
+      this.usbDevice = null;
+    }
+
     this.saveConfig({ connected: false });
   }
 
   // Send raw ESC/POS bytes to the connected printer
   public async sendRaw(data: Uint8Array): Promise<{ success: boolean; error?: string }> {
+    // 1. Windows Spooler / System Print Mode
+    if (this.config.type === 'windows_spooler' || this.config.type === 'system') {
+      if (typeof window !== 'undefined') {
+        window.print();
+        return { success: true };
+      }
+      return { success: false, error: 'Window print tidak tersedia' };
+    }
+
+    // 2. Direct WebUSB Mode (Raw USB Printer Class)
+    if (this.config.type === 'webusb') {
+      if (!this.usbDevice || !this.usbDevice.opened) {
+        return { success: false, error: 'Printer USB belum terhubung. Silakan klik Sambungkan USB.' };
+      }
+      try {
+        await this.usbDevice.transferOut(this.usbEndpointNumber, data as any);
+        return { success: true };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : 'Gagal mengirim data ke USB Printer' };
+      }
+    }
+
+    // 3. Bluetooth Mode
     if (this.config.type === 'bluetooth') {
       if (!this.bluetoothCharacteristic) {
         return { success: false, error: 'Printer Bluetooth belum terhubung' };
@@ -253,9 +370,12 @@ class PrinterService {
       } catch (err: unknown) {
         return { success: false, error: err instanceof Error ? err.message : 'Gagal mengirim data ke Bluetooth' };
       }
-    } else if (this.config.type === 'serial') {
+    }
+
+    // 4. USB Serial Mode
+    if (this.config.type === 'serial') {
       if (!this.serialWriter) {
-        return { success: false, error: 'Printer Kabel USB belum terhubung' };
+        return { success: false, error: 'Printer Kabel USB Serial belum terhubung' };
       }
       try {
         await this.serialWriter.write(data);
@@ -270,6 +390,11 @@ class PrinterService {
 
   // Print a transaction
   public async printTransaction(transaction: Transaction): Promise<{ success: boolean; error?: string }> {
+    if (this.config.type === 'windows_spooler' || this.config.type === 'system') {
+      window.print();
+      return { success: true };
+    }
+
     const rawBytes = generateEscPosReceipt(transaction, this.config.paperWidth, {
       cut: this.config.autoCut,
       openDrawer: this.config.openDrawer,
@@ -279,6 +404,11 @@ class PrinterService {
 
   // Print test receipt
   public async printTest(): Promise<{ success: boolean; error?: string }> {
+    if (this.config.type === 'windows_spooler' || this.config.type === 'system') {
+      window.print();
+      return { success: true };
+    }
+
     const rawBytes = generateTestReceipt(this.config.paperWidth);
     return this.sendRaw(rawBytes);
   }

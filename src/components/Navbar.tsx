@@ -91,17 +91,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 ? 'bg-blue-500/20 text-blue-300 border-blue-400/40 hover:bg-blue-500/30'
                 : 'bg-white/10 text-white/80 border-white/20 hover:bg-white/20'
             }`}
-            title="Klik untuk menghubungkan Printer Bluetooth / Kabel USB"
+            title="Klik untuk membuka Pengaturan Printer Thermal (Driver Windows / WebUSB / Bluetooth)"
           >
             {printerConfig.type === 'bluetooth' ? (
               <Bluetooth className="w-3.5 h-3.5 text-blue-400" />
             ) : (
-              <Cable className="w-3.5 h-3.5 text-amber-400" />
+              <Printer className="w-3.5 h-3.5 text-amber-400" />
             )}
             <span>
               Printer:{' '}
               {printerConfig.connected
-                ? `${printerConfig.paperWidth}mm (Konek)`
+                ? printerConfig.type === 'windows_spooler'
+                  ? 'EPPOS 58 (Siap)'
+                  : `${printerConfig.paperWidth}mm (Konek)`
                 : 'Sambung Thermal'}
             </span>
             {printerConfig.connected ? (

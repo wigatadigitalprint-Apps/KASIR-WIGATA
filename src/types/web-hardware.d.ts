@@ -56,6 +56,57 @@ interface Navigator {
     requestPort(options?: any): Promise<SerialPort>;
     getPorts(): Promise<SerialPort[]>;
   };
+  usb?: {
+    requestDevice(options: { filters: Array<{ vendorId?: number; productId?: number; classCode?: number; subclassCode?: number; protocolCode?: number; serialNumber?: string }> }): Promise<USBDevice>;
+    getDevices(): Promise<USBDevice[]>;
+  };
+}
+
+interface USBDevice {
+  vendorId: number;
+  productId: number;
+  productName?: string;
+  manufacturerName?: string;
+  serialNumber?: string;
+  opened: boolean;
+  configuration: USBConfiguration | null;
+  open(): Promise<void>;
+  close(): Promise<void>;
+  selectConfiguration(configurationValue: number): Promise<void>;
+  claimInterface(interfaceNumber: number): Promise<void>;
+  releaseInterface(interfaceNumber: number): Promise<void>;
+  transferOut(endpointNumber: number, data: BufferSource): Promise<USBOutTransferResult>;
+}
+
+interface USBConfiguration {
+  configurationValue: number;
+  interfaces: USBInterface[];
+}
+
+interface USBInterface {
+  interfaceNumber: number;
+  alternate: USBAlternateInterface;
+  alternates: USBAlternateInterface[];
+}
+
+interface USBAlternateInterface {
+  alternateSetting: number;
+  interfaceClass: number;
+  interfaceSubclass: number;
+  interfaceProtocol: number;
+  endpoints: USBEndpoint[];
+}
+
+interface USBEndpoint {
+  endpointNumber: number;
+  direction: 'in' | 'out';
+  type: 'bulk' | 'interrupt' | 'isochronous';
+  packetSize: number;
+}
+
+interface USBOutTransferResult {
+  bytesWritten: number;
+  status: 'ok' | 'stall';
 }
 
 interface SerialPort {

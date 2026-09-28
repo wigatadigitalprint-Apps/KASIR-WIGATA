@@ -325,78 +325,68 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
 
       {/* Action Buttons */}
       <div className="space-y-2 pt-1">
-        {/* Primary Thermal Print (Bluetooth / USB Cable) */}
+        {/* Main Smart Print Button */}
         <button
-          onClick={handleDirectThermalPrint}
+          onClick={async () => {
+            if (printerConfig.connected && printerConfig.type !== 'windows_spooler' && printerConfig.type !== 'system') {
+              await handleDirectThermalPrint();
+            } else {
+              handleSystemPrint();
+            }
+          }}
           disabled={isPrintingDirect}
-          className={`w-full py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-sm transition ${
-            printerConfig.connected
-              ? 'bg-[#0B1E3A] hover:bg-black text-white'
-              : 'bg-blue-600 hover:bg-blue-700 text-white'
-          }`}
+          className="w-full py-3.5 rounded-2xl bg-[#0B1E3A] hover:bg-black text-white font-black text-sm flex items-center justify-center gap-2 shadow-md transition"
+          title="Cetak struk ke printer thermal"
         >
-          {printerConfig.connected ? (
-            <>
-              {printerConfig.type === 'bluetooth' ? (
-                <Bluetooth className="w-4 h-4 text-blue-400" />
-              ) : (
-                <Cable className="w-4 h-4 text-amber-400" />
-              )}
-              {isPrintingDirect ? 'Mengirim ke Printer...' : `Cetak Struk via ${printerConfig.type.toUpperCase()} (${paperWidth}mm)`}
-            </>
-          ) : (
-            <>
-              <Printer className="w-4 h-4" />
-              Sambungkan Printer Thermal (Bluetooth / USB)
-            </>
-          )}
+          <Printer className="w-4 h-4 text-[#FFD23F]" />
+          <span>
+            {isPrintingDirect
+              ? 'Sedang Mencetak...'
+              : printerConfig.type === 'webusb' && printerConfig.connected
+              ? 'Cetak Direct WebUSB (EPPOS 58)'
+              : printerConfig.type === 'bluetooth' && printerConfig.connected
+              ? 'Cetak via Bluetooth (EPPOS 58)'
+              : 'Cetak Struk Thermal (EPPOS 58)'}
+          </span>
         </button>
 
-        {/* Secondary Quick Actions */}
-        <div className="grid grid-cols-3 gap-2">
-          {/* Browser System Print */}
+        {/* Secondary Actions */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* Change / Configure Printer */}
           <button
-            onClick={handleSystemPrint}
-            className="py-2.5 rounded-xl border border-black/10 bg-[#F6F7FB] hover:bg-black/10 text-[#0B1E3A] font-bold text-xs flex items-center justify-center gap-1.5 transition"
-            title="Cetak lewat dialog printer bawaan Windows / Android"
+            onClick={onOpenPrinterModal}
+            className="py-2.5 px-3 rounded-xl border border-black/10 bg-[#F6F7FB] hover:bg-black/10 text-[#0B1E3A] font-bold text-xs flex items-center justify-center gap-1.5 transition"
+            title="Buka pengaturan metode printer (Windows Driver / WebUSB / Bluetooth)"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print Browser</span>
+            <Cable className="w-3.5 h-3.5 text-black/50" />
+            <span className="truncate">Pengaturan Printer</span>
           </button>
 
           {/* Share WhatsApp */}
           <button
             onClick={handleShareWhatsApp}
-            className="py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5a] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
+            className="py-2.5 px-3 rounded-xl bg-[#25D366] hover:bg-[#1ebe5a] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
             title="Bagikan rincian nota langsung ke nomor WhatsApp pelanggan"
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>Share WA</span>
           </button>
-
-          {/* Download TXT */}
-          <button
-            onClick={handleDownloadTxt}
-            className="py-2.5 rounded-xl border border-black/10 bg-white hover:bg-black/5 text-[#0B1E3A] font-bold text-xs flex items-center justify-center gap-1.5 transition"
-            title="Download struk teks untuk arsip"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>File TXT</span>
-          </button>
         </div>
 
+        {/* Download TXT */}
+        <button
+          onClick={handleDownloadTxt}
+          className="w-full py-2 rounded-xl border border-black/10 bg-white hover:bg-[#F6F7FB] text-black/60 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition"
+          title="Download struk teks untuk arsip"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Download Struk (File TXT)</span>
+        </button>
+
         {/* Printer status hint */}
-        <div className="text-[11px] text-center text-black/50 pt-1 flex items-center justify-center gap-2">
-          {printerConfig.connected ? (
-            <span className="text-emerald-700 font-bold flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" />
-              Siap Cetak: {printerConfig.deviceName || 'Thermal Printer'}
-            </span>
-          ) : (
-            <span>
-              💡 Belum punya printer Bluetooth? Klik <strong>Print Browser</strong> untuk cetak via printer biasa atau simpan PDF.
-            </span>
-          )}
+        <div className="text-[11px] text-center text-black/60 pt-1 leading-snug">
+          💡 <strong>Mode Aktif:</strong> {printerConfig.deviceName || 'Windows Printer (Driver EPPOS 58)'}.
+          Klik tombol cetak di atas untuk mencetak nota seketika.
         </div>
       </div>
     </div>

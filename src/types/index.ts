@@ -76,7 +76,7 @@ export interface Transaction {
 }
 
 export interface PrinterConfig {
-  type: 'bluetooth' | 'serial' | 'system';
+  type: 'windows_spooler' | 'webusb' | 'bluetooth' | 'serial' | 'system';
   paperWidth: 58 | 80;
   connected: boolean;
   deviceName?: string;
