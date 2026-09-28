@@ -70,10 +70,93 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     }
   };
 
-  // Browser System Print
+  // Browser System Print with isolated auto-length iframe
   const handleSystemPrint = () => {
-    window.print();
-    onShowToast('Dialog cetak sistem dibuka');
+    const receiptEl = receiptRef.current;
+    if (!receiptEl) {
+      window.print();
+      return;
+    }
+
+    // Create temporary hidden iframe to isolate the exact height of the receipt
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    const receiptHtml = receiptEl.innerHTML;
+    const printWidthMm = paperWidth;
+    const innerContentWidthMm = paperWidth === 80 ? '72mm' : '48mm';
+
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Struk ${transaction.noNota}</title>
+  <style>
+    @page {
+      size: ${printWidthMm}mm auto;
+      margin: 0mm !important;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      width: ${printWidthMm}mm;
+      max-width: ${printWidthMm}mm;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+      color: #000 !important;
+      font-family: 'Courier New', Courier, monospace !important;
+      font-size: 11px !important;
+      line-height: 1.25 !important;
+      height: auto !important;
+      min-height: 0 !important;
+    }
+    .print-wrapper {
+      width: ${innerContentWidthMm};
+      margin: 0 auto;
+      padding: 1.5mm 1mm 3mm 1mm;
+    }
+    div, p, span {
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="print-wrapper">
+    ${receiptHtml}
+  </div>
+</body>
+</html>`);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        try {
+          document.body.removeChild(iframe);
+        } catch {
+          // ignore
+        }
+      }, 1500);
+    }, 200);
+
+    onShowToast('Membuka cetak auto-fit panjang struk...');
   };
 
   // Text version for WhatsApp or TXT
@@ -384,9 +467,15 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
         </button>
 
         {/* Printer status hint */}
-        <div className="text-[11px] text-center text-black/60 pt-1 leading-snug">
-          💡 <strong>Mode Aktif:</strong> {printerConfig.deviceName || 'Windows Printer (Driver EPPOS 58)'}.
-          Klik tombol cetak di atas untuk mencetak nota seketika.
+        <div className="text-[11px] bg-amber-50/80 border border-amber-200/80 rounded-2xl p-3 text-black/75 space-y-1">
+          <div className="font-bold text-[#0B1E3A] flex items-center gap-1.5">
+            <span>💡 3 Setelan di Jendela Print Windows agar Kertas Berhenti Pas:</span>
+          </div>
+          <ul className="list-disc list-inside space-y-0.5 text-[10.5px] text-black/70">
+            <li><strong>Ukuran Kertas (Paper size):</strong> Pilih <code>58 x 210 mm</code> atau <code>Roll Paper 58mm</code> (jangan pilih A4).</li>
+            <li><strong>Margin:</strong> Pilih <strong>None</strong> (Nol).</li>
+            <li><strong>Opsi (Options):</strong> <em>Hilangkan centang</em> <strong>Headers and footers</strong> agar tidak menarik kertas kosong di bawah.</li>
+          </ul>
         </div>
       </div>
     </div>

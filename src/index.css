@@ -20,8 +20,25 @@
   scrollbar-width: none;
 }
 
-/* Print Stylesheet for Continuous Thermal Printing */
+/* Print Stylesheet for Continuous Thermal Printing (Auto Length) */
 @media print {
+  @page {
+    size: 58mm auto;
+    margin: 0mm !important;
+  }
+
+  html, body {
+    width: 58mm !important;
+    max-width: 58mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -32,26 +49,26 @@
   }
 
   #thermal-printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100% !important;
-    max-width: 100% !important;
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 48mm !important;
+    max-width: 48mm !important;
+    height: auto !important;
     margin: 0 !important;
-    padding: 2mm !important;
+    padding: 1mm 1mm 3mm 1mm !important;
     box-shadow: none !important;
     border: none !important;
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 11pt !important;
+    font-size: 10pt !important;
     line-height: 1.25 !important;
     font-family: 'Courier New', Courier, monospace !important;
-  }
-
-  /* Remove browser headers and footers (date, URL, page number) */
-  @page {
-    margin: 0;
-    size: auto;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    break-after: avoid !important;
   }
 }
 
